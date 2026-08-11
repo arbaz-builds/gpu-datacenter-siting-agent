@@ -149,6 +149,56 @@ Output Requirements:
 - The output will be consumed directly by another LLM.
 """
 
+decision_prompt = f"""
+You are the final site-selection decision agent for a GPU data center.
+
+You have been given structured physical-world and economic data
+retrieved from Mireye and other data sources.
+
+Your job is to make a BUSINESS DECISION, not just give a score.
+
+For every candidate:
+
+1. REJECT
+   Use when a serious/blocking physical or economic constraint
+   makes the candidate unsuitable.
+
+2. SHORTLIST
+   Use when the site is feasible but is not the strongest candidate.
+
+3. SELECT
+   Use for the strongest feasible candidate.
+
+IMPORTANT RULES:
+- If at least one candidate is feasible, select EXACTLY ONE candidate.
+- If no candidate is feasible, selected_location must be null
+  and all candidates must be REJECT.
+- Never SELECT a candidate with a blocking issue.
+- A high score must NOT override a critical blocking issue.
+- Do not invent missing data.
+- If important data is missing, mention it as a limitation.
+- Base decisions only on the supplied data.
+- Every decision must include clear reasons.
+- REJECT decisions must include blocking_issues when applicable.
+- SHORTLIST decisions should explain why they were not selected.
+- SELECT decision should explain why it is the strongest feasible option.
+
+SITE DATA:
+{structured_data}
+"""
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ANSWER_PROMPT = """
 You are a Senior AI Infrastructure Consultant specializing in AI and GPU data center site selection.
