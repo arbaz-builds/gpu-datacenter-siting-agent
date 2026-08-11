@@ -10,7 +10,13 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from config import LLM
 
-from prompts import ANSWER_PROMPT, DECISION_TOOL_PROMPT, INTRO_SYSTEM, STRUCTURE_LLM_PROMPT,PLANNER_SYSTEM 
+from prompts import (
+    ANSWER_PROMPT,
+    DECISION_TOOL_PROMPT,
+    INTRO_SYSTEM,
+    PLANNER_SYSTEM,
+    STRUCTURE_LLM_PROMPT,
+)
 
 from state import DecisionOutput, IntroDecision, PlannerOutput, State
 
@@ -241,7 +247,22 @@ SITE DATA:
     decisions = [d.model_dump() for d in result.decisions]
 
     # --- Programmatic validation: never trust the prompt rule alone ---
-    selected = [d for d in decisions if d["decision"] == "SELECT"]
+
+    # Rule: a SELECT with blocking_issues is invalid — the prompt says
+    # never to do this, but enforce it in code too.
+    for d in decisions:
+        if d["decision"] == "SELECT" and d.get("blocking_issues"):
+            logger.error(
+                "[Decision] SELECT has blocking issues for %s: %s",
+                d["location"],
+                d["blocking_issues"],
+            )
+            d["decision"] = "REJECT"
+
+    selected = [
+        d for d in decisions
+        if d["decision"] == "SELECT" and not d.get("blocking_issues")
+    ]
 
     if len(selected) > 1:
         logger.error(
