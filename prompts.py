@@ -172,6 +172,18 @@ IMPORTANT RULES:
 - REJECT decisions must include blocking_issues when applicable.
 - SHORTLIST decisions should explain why they were not selected.
 - SELECT decision should explain why it is the strongest feasible option.
+
+ELECTRICITY COST ESTIMATE (for every candidate that has an electricity
+price in the data, regardless of REJECT/SHORTLIST/SELECT):
+- Assume a facility load of 50 MW unless the site data or the original
+  request specifies a different figure. Always report the MW figure you
+  used in assumed_load_mw.
+- electricity_price_cents_per_kwh = the price from the site data.
+- estimated_annual_electricity_cost_usd =
+  assumed_load_mw * 1000 (kW) * 8760 (hours/year) * electricity_price_cents_per_kwh / 100.
+- This is a screening-level estimate only, not a final cost. If the
+  electricity price is missing for a candidate, leave the cost fields
+  null rather than guessing a price.
 """
 
 
@@ -190,10 +202,18 @@ Instructions:
 - Do not invent missing site data.
 - Do not alter any decision (REJECT / SHORTLIST / SELECT).
 - Base your explanation only on the reasons and blocking_issues provided.
+- If estimated_annual_electricity_cost_usd is present for candidates,
+  state the figure(s) and clearly label them as a screening-level
+  estimate based on an assumed load (in MW) and the EIA electricity
+  price — not a final cost. If the selected site's estimate is lower
+  than a rejected or shortlisted site's, call out the approximate
+  annual savings.
 
 Clearly present, in this order:
-1. Selected site — which one, and why it is the strongest feasible option.
-2. Shortlisted sites — viable backups, and why they weren't selected.
+1. Selected site — which one, why it is the strongest feasible option,
+   and its estimated annual electricity cost (with assumptions stated).
+2. Shortlisted sites — viable backups, why they weren't selected, and
+   their cost estimate if available.
 3. Rejected sites — and their blocking reasons.
 4. Recommended next action — from the ACTIONS list.
 
