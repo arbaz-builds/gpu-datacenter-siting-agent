@@ -59,6 +59,21 @@ class SiteDecision(BaseModel):
     decision: Literal["REJECT", "SHORTLIST", "SELECT"]
     reasons: List[str] = Field(default_factory=list)
     blocking_issues: List[str] = Field(default_factory=list)
+    electricity_price_cents_per_kwh: Optional[float] = Field(
+        default=None,
+        description="Electricity price used for the cost estimate, as retrieved from EIA.",
+    )
+    assumed_load_mw: Optional[float] = Field(
+        default=None,
+        description="Assumed facility power draw in megawatts, used only for the screening-level cost estimate.",
+    )
+    estimated_annual_electricity_cost_usd: Optional[float] = Field(
+        default=None,
+        description=(
+            "Screening-level estimate: assumed_load_mw * 8760 hours * "
+            "electricity_price_cents_per_kwh / 100. Not a final cost figure."
+        ),
+    )
 
 
 class DecisionOutput(BaseModel):
