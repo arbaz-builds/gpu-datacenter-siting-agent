@@ -12,7 +12,7 @@ from config import LLM
 
 from prompts import ANSWER_PROMPT, DECISION_TOOL_PROMPT, INTRO_SYSTEM, STRUCTURE_LLM_PROMPT,PLANNER_SYSTEM 
 
-from state import IntroDecision, PlannerOutput, State
+from state import DecisionOutput, IntroDecision, PlannerOutput, State
 
 from tools import tools
 
@@ -188,6 +188,122 @@ async def structure_llm_node(state: State) -> dict:
     return {"messages": [result]}
 
 
+# ============ DECISION NODE ============
+
+async def decision_node(state: State) -> dict:
+    """
+    Decide whether each candidate should be REJECTED, SHORTLISTED,
+    or SELECTED based on the structured site data.
+    """
+    structured_data = state["messages"][-1].content
+
+    decision_prompt = f"""
+You are the final site-selection decision agent for a GPU data center.
+
+You have been given structured physical-world and economic data
+retrieved from Mireye and other data sources.
+
+Your job is to make a BUSINESS DECISION, not just give a score.
+
+For every candidate:
+
+1. REJECT
+   Use when a serious/blocking physical or economic constraint
+   makes the candidate unsuitable.
+
+2. SHORTLIST
+   Use when the site is feasible but is not the strongest candidate.
+
+3. SELECT
+   Use for the strongest feasible candidate.
+
+IMPORTANT RULES:
+- If at least one candidate is feasible, select EXACTLY ONE candidate.
+- If no candidate is feasible, selected_location must be null
+  and all candidates must be REJECT.
+- Never SELECT a candidate with a blocking issue.
+- A high score must NOT override a critical blocking issue.
+- Do not invent missing data.
+- If important data is missing, mention it as a limitation.
+- Base decisions only on the supplied data.
+- Every decision must include clear reasons.
+- REJECT decisions must include blocking_issues when applicable.
+- SHORTLIST decisions should explain why they were not selected.
+- SELECT decision should explain why it is the strongest feasible option.
+
+SITE DATA:
+{structured_data}
+"""
+
+    structured_llm = LLM.with_structured_output(DecisionOutput)
+    result = await structured_llm.ainvoke([SystemMessage(content=decision_prompt)])
+
+    decisions = [d.model_dump() for d in result.decisions]
+
+    # --- Programmatic validation: never trust the prompt rule alone ---
+    selected = [d for d in decisions if d["decision"] == "SELECT"]
+
+    if len(selected) > 1:
+        logger.error(
+            "[Decision] Invalid output: multiple SELECT decisions: %s",
+            [d["location"] for d in selected],
+        )
+        # Keep the model from producing an invalid final state.
+        # Keep the first SELECT only; remaining SELECTs become SHORTLIST.
+        selected_location = selected[0]["location"]
+        for d in decisions:
+            if d["decision"] == "SELECT" and d["location"] != selected_location:
+                d["decision"] = "SHORTLIST"
+    else:
+        selected_location = selected[0]["location"] if selected else None
+
+        # Edge case: result.selected_location points to a location that
+        # isn't actually marked SELECT in decisions — trust decisions, not
+        # the separate field.
+        if result.selected_location and result.selected_location != selected_location:
+            logger.error(
+                "[Decision] Mismatch: selected_location=%s but decisions show %s",
+                result.selected_location,
+                selected_location,
+            )
+
+    logger.info("[Decision] Selected location: %s", selected_location)
+
+    return {
+        "decision_results": decisions,
+        "selected_location": selected_location,
+    }
+
+
+# ============ ACTION NODE ============
+
+async def action_node(state: State) -> dict:
+    """Convert the site-selection decision into concrete next actions."""
+    decisions = state.get("decision_results", [])
+    selected_location = state.get("selected_location")
+
+    if not decisions:
+        return {"actions": ["No site decision was produced."]}
+
+    actions = []
+
+    if selected_location:
+        actions.append(
+            f"START_PRELIMINARY_DUE_DILIGENCE: Begin preliminary due diligence for {selected_location}."
+        )
+
+    rejected = [d["location"] for d in decisions if d["decision"] == "REJECT"]
+    if rejected:
+        actions.append("EXCLUDE_REJECTED_SITES: " + ", ".join(rejected))
+
+    shortlisted = [d["location"] for d in decisions if d["decision"] == "SHORTLIST"]
+    if shortlisted:
+        actions.append("KEEP_AS_BACKUP_OPTIONS: " + ", ".join(shortlisted))
+
+    logger.info("[Action] Actions: %s", actions)
+    return {"actions": actions}
+
+
 # ============ ANSWER NODE ===========
 
 def has_tool_data(state: State) -> bool:
@@ -211,10 +327,21 @@ async def answer_node(state: State) -> dict:
             )]
         }
 
+    decision_summary = json.dumps(state.get("decision_results", []), indent=2)
+    action_summary = json.dumps(state.get("actions", []), indent=2)
+
+    final_context = HumanMessage(
+        content=(
+            f"FINAL SITE DECISIONS:\n{decision_summary}\n\n"
+            f"ACTIONS:\n{action_summary}"
+        )
+    )
+
     resp = await LLM.ainvoke(
         [
             SystemMessage(content=ANSWER_PROMPT),
             *state["messages"][-6:],
+            final_context,
         ]
     )
 
