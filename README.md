@@ -30,11 +30,13 @@ The agent is a multi-step LangGraph pipeline:
 START
   → intro_router          (understand the user's request; ask follow-ups if unclear)
     → planner               (turn a state/city into 5 candidate locations to evaluate)
-      → llm_tool             (decide whether to call the site-data tool)
+      → llm_tool             (route to the site-data tool; makes no decisions itself)
         → tools               (get_datacenter_site_data: Mireye + EIA)
           → structure_llm      (normalize raw site JSON into a compact schema)
           → llm_tool            (loop back, now with structured data in context)
-        → answer              (final scored recommendation, once data is in hand)
+        → decision            (REJECT / SHORTLIST / SELECT — one business decision per candidate)
+          → action              (deterministic: map decisions to next steps)
+            → answer              (explain the decision and actions to the user)
 END
 ```
 
@@ -44,16 +46,26 @@ END
   cities, or a city into nearby industrial areas — without scoring or
   analyzing them yet. Planning is kept separate from evaluation so the agent
   never scores a location it hasn't actually looked at.
-- **`llm_tool_node`** — a decision-tool loop (max 3 iterations) that calls
-  `get_datacenter_site_data` when it needs real site data.
+- **`llm_tool_node`** — a tool-routing loop (max 3 iterations) that calls
+  `get_datacenter_site_data` for each candidate that still needs data. It is
+  explicitly forbidden from scoring, ranking, or deciding anything — that's
+  the decision node's job.
 - **`get_datacenter_site_data`** — geocodes the address, extracts the US
   state, fetches Mireye's `data_center_siting` preset, and pulls EIA's latest
   state electricity price. Includes retry logic for transient API failures.
 - **`structure_llm_node`** — strips metadata and normalizes the raw Mireye/EIA
-  JSON into a clean schema for the decision LLM.
-- **`answer_node`** — produces the final scored recommendation (JSON) across
-  power, cooling, land, water, hazards, environment, and residential impact.
-  Refuses to fabricate a report if no real site data was ever retrieved.
+  JSON into a clean schema for the decision node.
+- **`decision_node`** — makes the actual business call for every candidate:
+  `REJECT`, `SHORTLIST`, or `SELECT`. Enforced in code, not just prompted:
+  a candidate with a blocking issue can never be `SELECT`, and if the model
+  ever returns more than one `SELECT`, only the first is kept and the rest
+  are demoted to `SHORTLIST`.
+- **`action_node`** — a plain deterministic mapping from decisions to next
+  steps (e.g. `SELECT` → start due diligence, `REJECT` → exclude,
+  `SHORTLIST` → keep as backup). No LLM call — nothing to hallucinate here.
+- **`answer_node`** — explains the decision and actions to the user in plain
+  language. Treats `decision_node`'s output as authoritative and refuses to
+  fabricate a report if no real site data was ever retrieved.
 
 State is persisted per-conversation via **Postgres** (`AsyncPostgresSaver`),
 so a `thread_id` can resume a prior conversation.
@@ -61,12 +73,12 @@ so a `thread_id` can resume a prior conversation.
 ## Project structure
 
 ```
-gpu-center-location-agent/
+gpu-datacenter-siting-agent/
 ├── main.py       # entry point — _invoke(query_text, thread_id)
 ├── config.py     # LLM client + API keys (all via environment variables)
-├── state.py      # LangGraph State TypedDict + IntroDecision schema
+├── state.py      # LangGraph State TypedDict + structured-output schemas
 ├── tools.py      # Mireye/EIA API calls + get_datacenter_site_data tool
-├── nodes.py      # graph node functions (intro_router, llm_tool_node, etc.)
+├── nodes.py      # graph node functions (intro_router, decision_node, action_node, etc.)
 ├── graph.py      # StateGraph wiring (nodes + edges)
 ├── prompts.py    # all system prompts
 └── requirements.txt
@@ -77,8 +89,8 @@ gpu-center-location-agent/
 1. **Clone and install dependencies**
 
    ```bash
-   git clone https://github.com/arbaz-builds/gpu-center-location-agent.git
-   cd gpu-center-location-agent
+   git clone https://github.com/arbaz-builds/gpu-datacenter-siting-agent.git
+   cd gpu-datacenter-siting-agent
    pip install -r requirements.txt
    ```
 
@@ -113,12 +125,16 @@ gpu-center-location-agent/
 
 **Input:** `"Looking for an H100 GPU data center site near Austin, TX"`
 
-The agent geocodes the address, pulls Mireye's `data_center_siting` fields
-(power, terrain, water, hazards) and EIA's latest Texas electricity price,
-then returns a scored breakdown — each category scored 0–10, with the
-underlying data source and timestamp cited for every claim, plus an
-overall recommendation and the trade-offs behind it. If any of those
-lookups fail, the agent says so explicitly instead of guessing.
+The agent plans 5 candidate locations, geocodes each one, pulls Mireye's
+`data_center_siting` fields (power, terrain, water, hazards) and EIA's
+latest Texas electricity price, then makes an explicit decision for every
+candidate — `SELECT`, `SHORTLIST`, or `REJECT` — with reasons and any
+blocking issues cited. Exactly one candidate can be `SELECT`ed, and a
+candidate with a blocking issue is never selected, even if the model tries
+to. The final answer explains the selected site, the backups, the rejected
+sites and why, and the recommended next action (e.g. "begin preliminary
+due diligence for Houston"). If any of those lookups fail, the agent says
+so explicitly instead of guessing.
 
 ## Notes
 
