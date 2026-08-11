@@ -136,6 +136,38 @@ sites and why, and the recommended next action (e.g. "begin preliminary
 due diligence for Houston"). If any of those lookups fail, the agent says
 so explicitly instead of guessing.
 
+Each decision also carries a screening-level annual electricity cost
+estimate (assumed load in MW x 8,760 hours x the EIA retail price for
+that state), so a SELECT vs. REJECT decision reads as a dollar figure,
+not just a label — e.g. *"Houston: ~$24.1M/year vs. Dallas: ~$32.9M/year
+— roughly $8.8M/year lower at Houston."* The MW figure is a stated
+screening assumption (50 MW by default), not a measured site capacity.
+
+## Testing
+
+`test_decision_guards.py` unit-tests the validation/repair layer in
+`decision_node` directly — no LLM call, no Mireye/EIA call, no network
+access. It proves that invalid or dangerous model output gets caught by
+deterministic code rather than relying on the prompt being followed:
+
+```
+PASS  test_normal_selection
+PASS  test_blocking_issue_rejected
+PASS  test_multiple_select_guard
+PASS  test_all_candidates_rejected
+PASS  test_electricity_cost_is_recomputed_not_trusted
+PASS  test_electricity_cost_is_none_when_price_missing
+
+6 passed, 0 failed
+```
+
+Run it with:
+```bash
+python3 test_decision_guards.py
+# or, with pytest installed:
+python3 -m pytest test_decision_guards.py -v
+```
+
 ## Notes
 
 - No credentials are hardcoded — everything is read from environment variables.
