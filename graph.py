@@ -6,7 +6,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from nodes import (
+    action_node,
     answer_node,
+    decision_node,
     intro_router,
     intro_router_condition,
     llm_tool_node,
@@ -33,6 +35,8 @@ agent.add_node("planner", planner_llm)
 agent.add_node("llm_tool", llm_tool_node)
 agent.add_node("tools", tool_node)
 agent.add_node("structure_llm", structure_llm_node)
+agent.add_node("decision", decision_node)
+agent.add_node("action", action_node)
 agent.add_node("answer", answer_node)
 
 
@@ -92,10 +96,31 @@ agent.add_edge("tools", "llm_tool")
 # ============================================================
 # STRUCTURE LLM
 # Runs ONCE, only after llm_tool has finished all tool calls.
-# Normalizes the collected site data, then hands off to the final answer.
+# Normalizes the collected site data, then hands off to the
+# decision node, which makes an explicit REJECT/SHORTLIST/SELECT
+# call for each candidate.
 # ============================================================
 
-agent.add_edge("structure_llm", "answer")
+agent.add_edge("structure_llm", "decision")
+
+
+# ============================================================
+# DECISION
+# Converts structured site data into a business decision per
+# candidate (REJECT / SHORTLIST / SELECT, with exactly one SELECT
+# among feasible candidates).
+# ============================================================
+
+agent.add_edge("decision", "action")
+
+
+# ============================================================
+# ACTION
+# Deterministically converts the decision into concrete next
+# steps. No LLM decision-making happens here — only mapping.
+# ============================================================
+
+agent.add_edge("action", "answer")
 
 
 # ============================================================
