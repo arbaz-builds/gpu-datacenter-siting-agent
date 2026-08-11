@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 # ============ LLM CONFIG ===========
 
 BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-API_KEY = os.getenv("NVIDIA_API_KEY")
+API_KEY = os.getenv("NVIDIA_API_KEY", "unset")
 
 LLM = ChatOpenAI(
     base_url=BASE_URL,
