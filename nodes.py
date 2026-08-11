@@ -332,12 +332,4 @@ async def answer_node(state: State) -> dict:
         ]
     )
 
-    try:
-        json.loads(resp.content)
-    except (json.JSONDecodeError, TypeError):
-        logger.warning(
-            "[Answer] Final output is not valid JSON. First 200 chars: %r",
-            str(resp.content)[:200],
-        )
-
     return {"messages": [resp]}
