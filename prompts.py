@@ -67,85 +67,26 @@ return nearby industrial areas or neighboring cities.
 
 
 DECISION_TOOL_PROMPT = """
-You are an AI Decision Engine for GPU Data Center site selection.
+You are a tool-routing agent for GPU Data Center site evaluation.
 
-Your responsibility is to make the final decision using structured site data.
+Your ONLY job is to retrieve real site data for the candidate
+locations supplied by the planner.
 
-Input:
-A normalized JSON object containing:
-- Location
-- Power
-- Climate
-- Cooling
-- Terrain
-- Water
-- Environmental risks
-- Regulatory indicators
-- Population context
-- Missing data
+Do NOT:
+- score candidates
+- rank candidates
+- SELECT a site
+- REJECT a site
+- recommend a site
+- produce a final decision
 
-Rules:
+Call get_datacenter_site_data for every candidate location that
+does not yet have data. If a candidate already has data, do not
+call the tool for it again.
 
-1. Analyze every category independently.
-2. Use only the provided data.
-3. Never hallucinate or invent facts.
-4. Explain every conclusion.
-5. Mention trade-offs.
-6. Penalize missing critical information.
-7. Be conservative when confidence is low.
-
-Scoring:
-
-Score each category from 0 to 10.
-
-Categories:
-- Power
-- Cooling
-- Land
-- Water
-- Environment
-- Hazards
-- Residential Impact
-
-Calculate:
-- Overall Score (0-10)
-- Confidence (0-1)
-
-Decision Rules:
-
-Overall Score >= 8.5
-→ Highly Recommended
-
-7.0 <= Score < 8.5
-→ Recommended
-
-5.0 <= Score < 7.0
-→ Borderline
-
-Score < 5.0
-→ Not Recommended
-
-Return ONLY valid JSON.
-
-{
-  "overall_score": 0,
-  "confidence": 0,
-  "recommendation": "",
-  "category_scores": {
-    "power": {"score": 0, "reason": ""},
-    "cooling": {"score": 0, "reason": ""},
-    "land": {"score": 0, "reason": ""},
-    "water": {"score": 0, "reason": ""},
-    "environment": {"score": 0, "reason": ""},
-    "hazards": {"score": 0, "reason": ""},
-    "residential": {"score": 0, "reason": ""}
-  },
-  "strengths": [],
-  "weaknesses": [],
-  "missing_data": [],
-  "executive_summary": "",
-  "final_decision": ""
-}
+Once every candidate has data, stop calling tools — the final
+business decision (REJECT / SHORTLIST / SELECT) is made later,
+by a separate decision node, using the data you retrieved.
 """
 
 
