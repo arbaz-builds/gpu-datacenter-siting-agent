@@ -197,23 +197,25 @@ async def structure_llm_node(state: State) -> dict:
 
 # ============ DECISION NODE ============
 
-async def decision_node(state: State) -> dict:
+def apply_decision_guards(
+    decisions: list[dict],
+    llm_selected_location: str | None = None,
+) -> tuple[list[dict], str | None]:
     """
-    Decide whether each candidate should be REJECTED, SHORTLISTED,
-    or SELECTED based on the structured site data.
+    Pure, LLM-free validation/repair layer for decision_node's output.
+
+    Never trust the prompt rules alone — enforce them in code:
+    - Recompute the electricity cost estimate deterministically.
+    - A SELECT with blocking_issues is invalid -> demote to REJECT.
+    - At most one SELECT is allowed -> keep the first, demote the rest
+      to SHORTLIST.
+    - Trust the repaired `decisions` list over the LLM's separate
+      `selected_location` field if they disagree.
+
+    Mutates and returns the same `decisions` list (list of dicts, as
+    produced by `[d.model_dump() for d in result.decisions]`), plus the
+    final validated `selected_location`.
     """
-    structured_data = state["messages"][-1].content
-
-    structured_llm = LLM.with_structured_output(DecisionOutput)
-    result = await structured_llm.ainvoke([
-        SystemMessage(content=DECISION_SYSTEM_PROMPT),
-        HumanMessage(content=f"SITE DATA:\n{structured_data}"),
-    ])
-
-    decisions = [d.model_dump() for d in result.decisions]
-
-    # --- Programmatic validation: never trust the prompt rule alone ---
-
     # Recompute the electricity cost estimate in code — never trust an
     # LLM to do arithmetic correctly, even when the prompt spells out
     # the formula.
@@ -257,17 +259,38 @@ async def decision_node(state: State) -> dict:
     else:
         selected_location = selected[0]["location"] if selected else None
 
-        # Edge case: result.selected_location points to a location that
+        # Edge case: llm_selected_location points to a location that
         # isn't actually marked SELECT in decisions — trust decisions, not
         # the separate field.
-        if result.selected_location and result.selected_location != selected_location:
+        if llm_selected_location and llm_selected_location != selected_location:
             logger.error(
                 "[Decision] Mismatch: selected_location=%s but decisions show %s",
-                result.selected_location,
+                llm_selected_location,
                 selected_location,
             )
 
     logger.info("[Decision] Selected location: %s", selected_location)
+
+    return decisions, selected_location
+
+
+async def decision_node(state: State) -> dict:
+    """
+    Decide whether each candidate should be REJECTED, SHORTLISTED,
+    or SELECTED based on the structured site data.
+    """
+    structured_data = state["messages"][-1].content
+
+    structured_llm = LLM.with_structured_output(DecisionOutput)
+    result = await structured_llm.ainvoke([
+        SystemMessage(content=DECISION_SYSTEM_PROMPT),
+        HumanMessage(content=f"SITE DATA:\n{structured_data}"),
+    ])
+
+    decisions = [d.model_dump() for d in result.decisions]
+    decisions, selected_location = apply_decision_guards(
+        decisions, result.selected_location
+    )
 
     return {
         "decision_results": decisions,
