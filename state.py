@@ -54,6 +54,18 @@ class PlannerOutput(BaseModel):
     )
 
 
+class SiteDecision(BaseModel):
+    location: str
+    decision: Literal["REJECT", "SHORTLIST", "SELECT"]
+    reasons: List[str] = Field(default_factory=list)
+    blocking_issues: List[str] = Field(default_factory=list)
+
+
+class DecisionOutput(BaseModel):
+    decisions: List[SiteDecision]
+    selected_location: Optional[str] = None
+
+
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     decision: str
@@ -61,3 +73,6 @@ class State(TypedDict):
     iteration_count: int
     planner: str
     candidate_locations: List[dict]
+    decision_results: List[dict]
+    selected_location: Optional[str]
+    actions: List[str]
