@@ -214,6 +214,19 @@ async def decision_node(state: State) -> dict:
 
     # --- Programmatic validation: never trust the prompt rule alone ---
 
+    # Recompute the electricity cost estimate in code — never trust an
+    # LLM to do arithmetic correctly, even when the prompt spells out
+    # the formula.
+    for d in decisions:
+        price = d.get("electricity_price_cents_per_kwh")
+        load_mw = d.get("assumed_load_mw")
+        if price is not None and load_mw is not None:
+            d["estimated_annual_electricity_cost_usd"] = round(
+                load_mw * 1000 * 8760 * price / 100, 2
+            )
+        else:
+            d["estimated_annual_electricity_cost_usd"] = None
+
     # Rule: a SELECT with blocking_issues is invalid — the prompt says
     # never to do this, but enforce it in code too.
     for d in decisions:
@@ -276,7 +289,11 @@ async def action_node(state: State) -> dict:
 
     if selected_location:
         actions.append(
-            f"START_PRELIMINARY_DUE_DILIGENCE: Begin preliminary due diligence for {selected_location}."
+            f"START_PRELIMINARY_DUE_DILIGENCE: Begin preliminary due diligence for {selected_location}. "
+            "Next steps: (1) verify utility interconnection capacity, "
+            "(2) validate water/cooling feasibility on site, "
+            "(3) commission a formal site/environmental assessment. "
+            "These are screening recommendations, not actions the agent has performed."
         )
 
     rejected = [d["location"] for d in decisions if d["decision"] == "REJECT"]
