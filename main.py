@@ -32,3 +32,15 @@ async def _invoke(query_text: str, thread_id: str = "1") -> dict:
             config={"configurable": {"thread_id": thread_id}},
         )
     return result
+
+
+app = FastAPI()
+
+@app.post("/Chat")
+async def Agent(query_text: str, thread_id: str = "1") -> dict:
+    result = await _invoke(query_text, thread_id)
+    return {"response": result}
+
+     
+
+
