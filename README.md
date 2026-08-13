@@ -1,4 +1,4 @@
-# GPU Center Location Agent
+# GPU Datacenter Siting Agent
 
 **The problem:** Picking a GPU data center site is currently a multi-week,
 five-figure-consultant process — power availability, terrain, water,
@@ -8,8 +8,8 @@ before a developer can even start comparing options.
 
 **What this does:** an autonomous LangGraph agent that takes a US address
 (or a state/city), fetches real siting data and electricity pricing, and
-returns a scored, sourced recommendation — in minutes, not weeks. It
-combines:
+returns an explicit REJECT / SHORTLIST / SELECT decision per candidate —
+in minutes, not weeks. It combines:
 
 - **[Mireye](https://www.mireye.com) physical-world site data APIs** — terrain, power, water, hazards, and other siting facts for any US address or coordinate.
 - **EIA (U.S. Energy Information Administration)** electricity pricing data — the other half of the cost equation Mireye doesn't cover.
