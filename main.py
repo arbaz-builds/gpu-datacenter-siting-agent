@@ -12,6 +12,11 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from config import DATABASE_URL
 from graph import agent
 
+
+
+from fastapi import FastAPI
+
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
