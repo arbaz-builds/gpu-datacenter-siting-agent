@@ -93,6 +93,28 @@ def get_datacenter_site_data(address: str) -> dict:
         A dictionary containing the geocoded location, electricity price (if available),
         and Mireye data center siting analysis.
     """
+    try:
+        return _get_datacenter_site_data_impl(address)
+    except Exception as e:
+        # A single candidate failing (bad geocode, API outage, unexpected
+        # response shape, etc.) should never take down the whole graph —
+        # the planner may have queued several candidates, and the rest
+        # should still get evaluated. Surface the failure as data instead.
+        logger.error(
+            "[Tool] get_datacenter_site_data failed for address=%r: %s",
+            address, e,
+        )
+        return {
+            "tool_output": {
+                "location": {"address": address},
+                "electricity": None,
+                "mireye": None,
+                "error": f"Site data could not be retrieved for this candidate: {e}",
+            }
+        }
+
+
+def _get_datacenter_site_data_impl(address: str) -> dict:
     geo = call_mireye("/v1/geocode", {"address": address})
 
     lat = geo["lat"]
@@ -104,10 +126,28 @@ def get_datacenter_site_data(address: str) -> dict:
     normalized_address = geo.get("normalized_address", "") or ""
     state_match = re.search(r",\s*([A-Z]{2})\s+\d{5}", normalized_address)
     if not state_match:
-        raise ValueError(
-            f"Could not determine US state from geocode result for "
-            f"address={address!r} (normalized_address={normalized_address!r})"
+        logger.error(
+            "[Tool] Could not determine US state from geocode result for "
+            "address=%r (normalized_address=%r) — returning partial data.",
+            address, normalized_address,
         )
+        return {
+            "tool_output": {
+                "location": {
+                    "address": geo.get("normalized_address") or address,
+                    "lat": lat,
+                    "lng": lng,
+                    "state": None,
+                },
+                "electricity": None,
+                "mireye": None,
+                "error": (
+                    "Could not determine US state from the geocoded address; "
+                    "site data and electricity price could not be retrieved "
+                    "for this candidate."
+                ),
+            }
+        }
     state_abbr = state_match.group(1)
 
     dc = call_mireye(
@@ -123,10 +163,27 @@ def get_datacenter_site_data(address: str) -> dict:
 
     mireye_fields = dc.get("fields")
     if mireye_fields is None:
-        raise ValueError(
-            f"Mireye /v1/fetch response for address={address!r} did not "
-            f"contain a 'fields' key (keys present: {list(dc.keys())})."
+        logger.error(
+            "[Tool] Mireye /v1/fetch response for address=%r did not "
+            "contain a 'fields' key (keys present: %s) — returning partial data.",
+            address, list(dc.keys()),
         )
+        return {
+            "tool_output": {
+                "location": {
+                    "address": geo.get("normalized_address"),
+                    "lat": lat,
+                    "lng": lng,
+                    "state": state_abbr,
+                },
+                "electricity": electricity,
+                "mireye": None,
+                "error": (
+                    "Mireye site data was unavailable for this candidate "
+                    "(unexpected API response format)."
+                ),
+            }
+        }
 
     return {
         "tool_output": {
