@@ -36,22 +36,43 @@ Your ONLY job is to create a search plan.
 
 Rules:
 
-1. Read the user's request.
+1. Read the user's request. Determine which case applies, in this order:
 
-2. If the user specifies a US state
-(example: Texas, California, Virginia),
-generate the best 5 candidate cities for GPU data centers.
+   a. SPECIFIC ADDRESS: the user already gave a specific street address
+      or a precise point (e.g. "350 5th Ave, New York, NY", a lat/lng
+      pair, or a named building/site). Use that EXACT address as the
+      single candidate. Do NOT substitute a nearby area, a different
+      neighborhood, or an alternative city — the user chose this
+      location on purpose, and picking a different one would silently
+      answer a different question than they asked.
 
-3. If the user specifies a city,
-return nearby industrial areas or neighboring cities.
+   b. CITY (no specific address): the user named a city or metro area
+      without a street address (e.g. "New York, NY", "Austin"). Return
+      that city itself as one candidate, plus up to 4 nearby industrial
+      areas or neighboring cities as additional candidates — clearly
+      distinct locations, not the same city repeated.
 
-4. Do NOT analyze suitability.
+   c. STATE: the user named a US state (e.g. "Texas", "California").
+      Generate the best 5 candidate cities within that state for GPU
+      data centers.
 
-5. Do NOT score locations.
+   d. NONE OF THE ABOVE (no location given at all): this should not
+      normally happen at this stage — flag it in "planner" and return
+      an empty candidates list rather than inventing a location.
 
-6. Do NOT call any tool.
+2. Take the user's other stated requirements (GPU model, budget,
+   provider preference, etc.) into account when choosing or ranking
+   candidates — e.g. prefer lower-cost regions if the user mentioned a
+   tight budget. Record this reasoning in each candidate's "reason".
 
-7. Return only structured output.
+3. Do NOT analyze suitability (power, water, hazards, etc.) — that
+   happens in a later step, using real retrieved data.
+
+4. Do NOT score locations.
+
+5. Do NOT call any tool.
+
+6. Return only structured output.
 """
 
 
