@@ -12,7 +12,6 @@ Run in production:
 """
 
 import logging
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from langchain_core.messages import HumanMessage
@@ -25,30 +24,6 @@ from graph import agent
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# A single, long-lived Postgres connection pool and compiled graph, set up
-# once at startup and reused across requests — opening a fresh Postgres
-# connection on every request is slow and wastes connections under load.
-_checkpointer_cm = None
-_checkpointer = None
-_compiled_agent = None
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _checkpointer_cm, _checkpointer, _compiled_agent
-
-    _checkpointer_cm = AsyncPostgresSaver.from_conn_string(DATABASE_URL)
-    _checkpointer = await _checkpointer_cm.__aenter__()
-    await _checkpointer.setup()
-    _compiled_agent = agent.compile(checkpointer=_checkpointer)
-
-    logger.info("[Startup] Postgres checkpointer ready, graph compiled.")
-    yield
-
-    await _checkpointer_cm.__aexit__(None, None, None)
-    logger.info("[Shutdown] Postgres connection closed.")
-
-
 app = FastAPI(
     title="GPU Datacenter Siting Agent",
     description=(
@@ -56,7 +31,6 @@ app = FastAPI(
         "pricing to REJECT / SHORTLIST / SELECT GPU data center sites."
     ),
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 
@@ -73,20 +47,24 @@ class ChatResponse(BaseModel):
 async def _invoke(query_text: str, thread_id: str = "1") -> dict:
     """
     Run one turn of the agent for the given thread and return the raw
-    LangGraph result dict. Used by both the API and any local/manual
-    testing scripts.
-    """
-    if _compiled_agent is None:
-        raise RuntimeError(
-            "Agent is not initialized yet — this should only happen if "
-            "_invoke is called outside of the FastAPI lifespan (e.g. a "
-            "standalone script). See README for a standalone usage example."
-        )
+    LangGraph result dict.
 
-    result = await _compiled_agent.ainvoke(
-        {"messages": [HumanMessage(content=query_text)]},
-        config={"configurable": {"thread_id": thread_id}},
-    )
+    A fresh Postgres connection is opened and closed for this single call.
+    This is intentionally NOT a long-lived pooled connection: managed
+    free-tier Postgres instances (e.g. Render, Supabase free tier) close
+    idle connections after a short period, which turned a single shared
+    connection into "works at startup, fails on the first real request"
+    (psycopg.OperationalError: SSL connection has been closed
+    unexpectedly). A fresh connection per call is slightly slower but
+    reliable — this agent is not high-throughput enough for that cost to
+    matter.
+    """
+    async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as cp:
+        await cp.setup()
+        result = await agent.compile(checkpointer=cp).ainvoke(
+            {"messages": [HumanMessage(content=query_text)]},
+            config={"configurable": {"thread_id": thread_id}},
+        )
     return result
 
 
