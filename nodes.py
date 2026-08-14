@@ -70,14 +70,23 @@ def intro_router_condition(state: State):
 async def planner_llm(state: State) -> dict:
     structured_llm = LLM.with_structured_output(PlannerOutput)
 
-    # Use the user's actual last request, not an arbitrary slice of
-    # recent messages (which may include intro-router chatter or shift
-    # unpredictably as conversation history grows).
-    user_message = next(
-        (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
-        None,
-    )
-    user_content = user_message.content if user_message else ""
+    # Prefer intro_router's polished, single-sentence summary
+    # (state["topic"], aka RefindTopic) — it already folds together
+    # location, GPU type, provider, and budget from the *whole*
+    # conversation, including earlier turns. Falling back to only the
+    # latest HumanMessage risks losing details the user gave in an
+    # earlier message (e.g. "H100s, $50M budget" in turn 1, "ok do
+    # Texas" in turn 2 — the raw last message alone would drop the
+    # GPU/budget details).
+    topic = state.get("topic")
+    if topic:
+        user_content = topic
+    else:
+        user_message = next(
+            (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
+            None,
+        )
+        user_content = user_message.content if user_message else ""
 
     messages = [
         SystemMessage(content=PLANNER_SYSTEM),
