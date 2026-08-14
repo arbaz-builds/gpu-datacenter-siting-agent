@@ -111,14 +111,43 @@ gpu-datacenter-siting-agent/
    export DATABASE_URL="postgresql://user:pass@host/dbname?sslmode=require"
    ```
 
-3. **Run**
+3. **Run the API**
+
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+   Then either open the interactive docs at `http://127.0.0.1:8000/docs`,
+   or call it directly:
+
+   ```bash
+   curl -X POST http://127.0.0.1:8000/chat \
+     -H "Content-Type: application/json" \
+     -d '{"query": "Looking for an H100 GPU data center site near Austin, TX"}'
+   ```
+
+   `GET /health` is a plain liveness check that doesn't touch Postgres or
+   any external API — useful for deployment health checks.
+
+4. **Or run it as a standalone script** (no HTTP server)
 
    ```python
    import asyncio
-   from main import _invoke
+   from langchain_core.messages import HumanMessage
+   from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+   from config import DATABASE_URL
+   from graph import agent
 
-   result = asyncio.run(_invoke("Looking for an H100 GPU data center site near Austin, TX"))
-   print(result["messages"][-1].content)
+   async def run():
+       async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as cp:
+           await cp.setup()
+           result = await agent.compile(checkpointer=cp).ainvoke(
+               {"messages": [HumanMessage(content="Looking for an H100 GPU data center site near Austin, TX")]},
+               config={"configurable": {"thread_id": "1"}},
+           )
+       print(result["messages"][-1].content)
+
+   asyncio.run(run())
    ```
 
 ## Example
